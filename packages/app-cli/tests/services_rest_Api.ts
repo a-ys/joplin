@@ -2,7 +2,7 @@ import { PaginationOrderDir } from '@joplin/lib/models/utils/types';
 import Api, { RequestMethod } from '@joplin/lib/services/rest/Api';
 import shim from '@joplin/lib/shim';
 
-const { asyncTest, setupDatabaseAndSynchronizer, switchClient, checkThrowAsync, db } = require('./test-utils.js');
+const { setupDatabaseAndSynchronizer, switchClient, checkThrowAsync, db, msleep } = require('./test-utils.js');
 const Folder = require('@joplin/lib/models/Folder');
 const Resource = require('@joplin/lib/models/Resource');
 const Note = require('@joplin/lib/models/Note');
@@ -10,14 +10,6 @@ const Tag = require('@joplin/lib/models/Tag');
 const NoteTag = require('@joplin/lib/models/NoteTag');
 const ResourceService = require('@joplin/lib/services/ResourceService').default;
 const SearchEngine = require('@joplin/lib/services/searchengine/SearchEngine');
-
-async function msleep(ms: number) {
-	return new Promise((resolve) => {
-		shim.setTimeout(() => {
-			resolve();
-		}, ms);
-	});
-}
 
 const createFolderForPagination = async (num: number, time: number) => {
 	await Folder.save({
@@ -50,23 +42,23 @@ describe('services_rest_Api', function() {
 		done();
 	});
 
-	it('should ping', asyncTest(async () => {
+	it('should ping', (async () => {
 		const response = await api.route(RequestMethod.GET, 'ping');
 		expect(response).toBe('JoplinClipperServer');
 	}));
 
-	it('should handle Not Found errors', asyncTest(async () => {
+	it('should handle Not Found errors', (async () => {
 		const hasThrown = await checkThrowAsync(async () => await api.route(RequestMethod.GET, 'pong'));
 		expect(hasThrown).toBe(true);
 	}));
 
-	it('should get folders', asyncTest(async () => {
+	it('should get folders', (async () => {
 		await Folder.save({ title: 'mon carnet' });
 		const response = await api.route(RequestMethod.GET, 'folders');
 		expect(response.items.length).toBe(1);
 	}));
 
-	it('should update folders', asyncTest(async () => {
+	it('should update folders', (async () => {
 		const f1 = await Folder.save({ title: 'mon carnet' });
 		await api.route(RequestMethod.PUT, `folders/${f1.id}`, null, JSON.stringify({
 			title: 'modifié',
@@ -76,7 +68,7 @@ describe('services_rest_Api', function() {
 		expect(f1b.title).toBe('modifié');
 	}));
 
-	it('should delete folders', asyncTest(async () => {
+	it('should delete folders', (async () => {
 		const f1 = await Folder.save({ title: 'mon carnet' });
 		await api.route(RequestMethod.DELETE, `folders/${f1.id}`);
 
@@ -84,7 +76,7 @@ describe('services_rest_Api', function() {
 		expect(!f1b).toBe(true);
 	}));
 
-	it('should create folders', asyncTest(async () => {
+	it('should create folders', (async () => {
 		const response = await api.route(RequestMethod.POST, 'folders', null, JSON.stringify({
 			title: 'from api',
 		}));
@@ -96,7 +88,7 @@ describe('services_rest_Api', function() {
 		expect(f[0].title).toBe('from api');
 	}));
 
-	it('should get one folder', asyncTest(async () => {
+	it('should get one folder', (async () => {
 		const f1 = await Folder.save({ title: 'mon carnet' });
 		const response = await api.route(RequestMethod.GET, `folders/${f1.id}`);
 		expect(response.id).toBe(f1.id);
@@ -105,7 +97,7 @@ describe('services_rest_Api', function() {
 		expect(hasThrown).toBe(true);
 	}));
 
-	it('should get the folder notes', asyncTest(async () => {
+	it('should get the folder notes', (async () => {
 		const f1 = await Folder.save({ title: 'mon carnet' });
 		const response2 = await api.route(RequestMethod.GET, `folders/${f1.id}/notes`);
 		expect(response2.items.length).toBe(0);
@@ -116,12 +108,12 @@ describe('services_rest_Api', function() {
 		expect(response.items.length).toBe(2);
 	}));
 
-	it('should fail on invalid paths', asyncTest(async () => {
+	it('should fail on invalid paths', (async () => {
 		const hasThrown = await checkThrowAsync(async () => await api.route(RequestMethod.GET, 'schtroumpf'));
 		expect(hasThrown).toBe(true);
 	}));
 
-	it('should get notes', asyncTest(async () => {
+	it('should get notes', (async () => {
 		let response = null;
 		const f1 = await Folder.save({ title: 'mon carnet' });
 		const f2 = await Folder.save({ title: 'mon deuxième carnet' });
@@ -141,7 +133,7 @@ describe('services_rest_Api', function() {
 		expect(response.title).toBe('trois');
 	}));
 
-	it('should create notes', asyncTest(async () => {
+	it('should create notes', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -160,7 +152,7 @@ describe('services_rest_Api', function() {
 		expect(!!response.id).toBe(true);
 	}));
 
-	it('should allow setting note properties', asyncTest(async () => {
+	it('should allow setting note properties', (async () => {
 		let response: any = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -195,7 +187,7 @@ describe('services_rest_Api', function() {
 		}
 	}));
 
-	it('should preserve user timestamps when creating notes', asyncTest(async () => {
+	it('should preserve user timestamps when creating notes', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -222,7 +214,7 @@ describe('services_rest_Api', function() {
 		expect(newNote.user_created_time).toBeGreaterThanOrEqual(timeBefore);
 	}));
 
-	it('should preserve user timestamps when updating notes', asyncTest(async () => {
+	it('should preserve user timestamps when updating notes', (async () => {
 		const folder = await Folder.save({ title: 'mon carnet' });
 
 		const updatedTime = Date.now() - 1000;
@@ -265,7 +257,7 @@ describe('services_rest_Api', function() {
 		}
 	}));
 
-	it('should create notes with supplied ID', asyncTest(async () => {
+	it('should create notes with supplied ID', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -277,7 +269,7 @@ describe('services_rest_Api', function() {
 		expect(response.id).toBe('12345678123456781234567812345678');
 	}));
 
-	it('should create todos', asyncTest(async () => {
+	it('should create todos', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'stuff to do' });
 
@@ -308,7 +300,7 @@ describe('services_rest_Api', function() {
 		}));
 	}));
 
-	it('should create folders with supplied ID', asyncTest(async () => {
+	it('should create folders with supplied ID', (async () => {
 		const response = await api.route(RequestMethod.POST, 'folders', null, JSON.stringify({
 			id: '12345678123456781234567812345678',
 			title: 'from api',
@@ -317,7 +309,7 @@ describe('services_rest_Api', function() {
 		expect(response.id).toBe('12345678123456781234567812345678');
 	}));
 
-	it('should create notes with images', asyncTest(async () => {
+	it('should create notes with images', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -334,7 +326,7 @@ describe('services_rest_Api', function() {
 		expect(response.body.indexOf(resource.id) >= 0).toBe(true);
 	}));
 
-	it('should delete resources', asyncTest(async () => {
+	it('should delete resources', (async () => {
 		const f = await Folder.save({ title: 'mon carnet' });
 
 		await api.route(RequestMethod.POST, 'notes', null, JSON.stringify({
@@ -353,7 +345,7 @@ describe('services_rest_Api', function() {
 		expect(!(await Resource.load(resource.id))).toBe(true);
 	}));
 
-	it('should create notes from HTML', asyncTest(async () => {
+	it('should create notes from HTML', (async () => {
 		let response = null;
 		const f = await Folder.save({ title: 'mon carnet' });
 
@@ -366,7 +358,7 @@ describe('services_rest_Api', function() {
 		expect(response.body).toBe('**Bold text**');
 	}));
 
-	it('should handle tokens', asyncTest(async () => {
+	it('should handle tokens', (async () => {
 		api = new Api('mytoken');
 
 		let hasThrown = await checkThrowAsync(async () => await api.route(RequestMethod.GET, 'notes'));
@@ -379,7 +371,7 @@ describe('services_rest_Api', function() {
 		expect(hasThrown).toBe(true);
 	}));
 
-	it('should add tags to notes', asyncTest(async () => {
+	it('should add tags to notes', (async () => {
 		const tag = await Tag.save({ title: 'mon étiquette' });
 		const note = await Note.save({ title: 'ma note' });
 
@@ -391,7 +383,7 @@ describe('services_rest_Api', function() {
 		expect(noteIds[0]).toBe(note.id);
 	}));
 
-	it('should remove tags from notes', asyncTest(async () => {
+	it('should remove tags from notes', (async () => {
 		const tag = await Tag.save({ title: 'mon étiquette' });
 		const note = await Note.save({ title: 'ma note' });
 		await Tag.addNote(tag.id, note.id);
@@ -402,7 +394,7 @@ describe('services_rest_Api', function() {
 		expect(noteIds.length).toBe(0);
 	}));
 
-	it('should list all tag notes', asyncTest(async () => {
+	it('should list all tag notes', (async () => {
 		const tag = await Tag.save({ title: 'mon étiquette' });
 		const tag2 = await Tag.save({ title: 'mon étiquette 2' });
 		const note1 = await Note.save({ title: 'ma note un' });
@@ -422,7 +414,7 @@ describe('services_rest_Api', function() {
 		expect(response3.items.length).toBe(2);
 	}));
 
-	it('should update tags when updating notes', asyncTest(async () => {
+	it('should update tags when updating notes', (async () => {
 		const tag1 = await Tag.save({ title: 'mon étiquette 1' });
 		const tag2 = await Tag.save({ title: 'mon étiquette 2' });
 		const tag3 = await Tag.save({ title: 'mon étiquette 3' });
@@ -443,7 +435,7 @@ describe('services_rest_Api', function() {
 		expect(tagIds.includes(tag3.id)).toBe(true);
 	}));
 
-	it('should create and update tags when updating notes', asyncTest(async () => {
+	it('should create and update tags when updating notes', (async () => {
 		const tag1 = await Tag.save({ title: 'mon étiquette 1' });
 		const tag2 = await Tag.save({ title: 'mon étiquette 2' });
 		const newTagTitle = 'mon étiquette 3';
@@ -465,7 +457,7 @@ describe('services_rest_Api', function() {
 		expect(tagIds.includes(newTag.id)).toBe(true);
 	}));
 
-	it('should not update tags if tags is not mentioned when updating', asyncTest(async () => {
+	it('should not update tags if tags is not mentioned when updating', (async () => {
 		const tag1 = await Tag.save({ title: 'mon étiquette 1' });
 		const tag2 = await Tag.save({ title: 'mon étiquette 2' });
 
@@ -485,7 +477,7 @@ describe('services_rest_Api', function() {
 		expect(tagIds.includes(tag2.id)).toBe(true);
 	}));
 
-	it('should remove tags from note if tags is set to empty string when updating', asyncTest(async () => {
+	it('should remove tags from note if tags is set to empty string when updating', (async () => {
 		const tag1 = await Tag.save({ title: 'mon étiquette 1' });
 		const tag2 = await Tag.save({ title: 'mon étiquette 2' });
 
@@ -503,7 +495,7 @@ describe('services_rest_Api', function() {
 		expect(tagIds.length === 0).toBe(true);
 	}));
 
-	it('should paginate results', asyncTest(async () => {
+	it('should paginate results', (async () => {
 		await createFolderForPagination(1, 1001);
 		await createFolderForPagination(2, 1002);
 		await createFolderForPagination(3, 1003);
@@ -564,7 +556,7 @@ describe('services_rest_Api', function() {
 		}
 	}));
 
-	it('should paginate results and handle duplicate field values', asyncTest(async () => {
+	it('should paginate results and handle duplicate field values', (async () => {
 		// If, for example, ordering by updated_time, and two of the rows
 		// have the same updated_time, it should make sure that the sort
 		// order is stable and all results are correctly returned.
@@ -593,7 +585,7 @@ describe('services_rest_Api', function() {
 		expect(r2.items[1].title).toBe('folder4');
 	}));
 
-	it('should paginate results and return the requested fields only', asyncTest(async () => {
+	it('should paginate results and return the requested fields only', (async () => {
 		await createNoteForPagination(1, 1001);
 		await createNoteForPagination(2, 1002);
 		await createNoteForPagination(3, 1003);
@@ -621,7 +613,7 @@ describe('services_rest_Api', function() {
 		expect(!!r2.items[0].id).toBe(true);
 	}));
 
-	it('should paginate folder notes', asyncTest(async () => {
+	it('should paginate folder notes', (async () => {
 		const folder = await Folder.save({});
 		const note1 = await Note.save({ parent_id: folder.id });
 		await msleep(1);
@@ -646,7 +638,7 @@ describe('services_rest_Api', function() {
 		expect(r2.items[0].id).toBe(note3.id);
 	}));
 
-	it('should sort search paginated results', asyncTest(async () => {
+	it('should sort search paginated results', (async () => {
 		SearchEngine.instance().setDb(db());
 
 		await createNoteForPagination('note c', 1000);
@@ -698,7 +690,7 @@ describe('services_rest_Api', function() {
 		}
 	}));
 
-	it('should return default fields', asyncTest(async () => {
+	it('should return default fields', (async () => {
 		const folder = await Folder.save({ title: 'folder' });
 		const note1 = await Note.save({ title: 'note1', parent_id: folder.id });
 		await Note.save({ title: 'note2', parent_id: folder.id });
@@ -740,7 +732,7 @@ describe('services_rest_Api', function() {
 		}
 	}));
 
-	it('should return the notes associated with a resource', asyncTest(async () => {
+	it('should return the notes associated with a resource', (async () => {
 		const note = await Note.save({});
 		await shim.attachFileToNote(note, `${__dirname}/../tests/support/photo.jpg`);
 		const resource = (await Resource.all())[0];
@@ -754,7 +746,7 @@ describe('services_rest_Api', function() {
 		expect(r.items[0].id).toBe(note.id);
 	}));
 
-	it('should return the resources associated with a note', asyncTest(async () => {
+	it('should return the resources associated with a note', (async () => {
 		const note = await Note.save({});
 		await shim.attachFileToNote(note, `${__dirname}/../tests/support/photo.jpg`);
 		const resource = (await Resource.all())[0];
@@ -765,7 +757,7 @@ describe('services_rest_Api', function() {
 		expect(r.items[0].id).toBe(resource.id);
 	}));
 
-	it('should return search results', asyncTest(async () => {
+	it('should return search results', (async () => {
 		SearchEngine.instance().setDb(db());
 
 		for (let i = 0; i < 10; i++) {

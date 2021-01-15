@@ -24,6 +24,7 @@ import { themeStyle } from '@joplin/lib/theme';
 import { ThemeAppearance } from '@joplin/lib/themes/type';
 import SpellCheckerService from '@joplin/lib/services/spellChecker/SpellCheckerService';
 import dialogs from '../../../dialogs';
+import convertToScreenCoordinates from '../../../utils/convertToScreenCoordinates';
 
 const Note = require('@joplin/lib/models/Note.js');
 const { clipboard } = require('electron');
@@ -85,7 +86,6 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 			}
 			editorRef.current.setSelections(newSelections);
 		}
-		editorRef.current.focus();
 	}, []);
 
 	const addListItem = useCallback((string1, defaultText = '') => {
@@ -97,7 +97,6 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 			} else {
 				wrapSelectionWithStrings(string1, '', defaultText);
 			}
-			editorRef.current.focus();
 		}
 	}, [wrapSelectionWithStrings]);
 
@@ -141,7 +140,7 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 					} else {
 						reg.logger().warn('CodeMirror: unsupported drop item: ', cmd);
 					}
-				} else if (cmd.name === 'focus') {
+				} else if (cmd.name === 'editor.focus') {
 					editorRef.current.focus();
 				} else {
 					commandProcessed = false;
@@ -166,10 +165,23 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 						replaceSelection: (value: any) => {
 							return editorRef.current.replaceSelection(value);
 						},
+						textCopy: () => {
+							editorCopyText();
+						},
+						textCut: () => {
+							editorCutText();
+						},
+						textPaste: () => {
+							editorPaste();
+						},
+						textSelectAll: () => {
+							return editorRef.current.execCommand('selectAll');
+						},
 						textBold: () => wrapSelectionWithStrings('**', '**', _('strong text')),
 						textItalic: () => wrapSelectionWithStrings('*', '*', _('emphasised text')),
 						textLink: async () => {
 							const url = await dialogs.prompt(_('Insert Hyperlink'));
+							editorRef.current.focus();
 							if (url) wrapSelectionWithStrings('[', `](${url})`);
 						},
 						textCode: () => {
@@ -211,6 +223,8 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 
 					if (commands[cmd.name]) {
 						commandOutput = commands[cmd.name](cmd.value);
+					} else if (editorRef.current.supportsCommand(cmd)) {
+						commandOutput = editorRef.current.execCommandFromJoplin(cmd);
 					} else {
 						reg.logger().warn('CodeMirror: unsupported Joplin command: ', cmd);
 					}
@@ -255,6 +269,17 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 			editorRef.current.replaceSelection(clipboard.readText());
 		}
 	}, []);
+
+	const editorPaste = useCallback(() => {
+		const clipboardText = clipboard.readText();
+
+		if (clipboardText) {
+			editorPasteText();
+		} else {
+			// To handle pasting images
+			void onEditorPaste();
+		}
+	}, [editorPasteText, onEditorPaste]);
 
 	const loadScript = async (script: any) => {
 		return new Promise((resolve) => {
@@ -323,7 +348,7 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 			}
 		}
 
-		loadScripts();
+		void loadScripts();
 
 		return () => {
 			cancelled = true;
@@ -360,6 +385,12 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 				/* This is used to enable the scroll-past end behaviour. The same height should */
 				/* be applied to the viewer. */
 				padding-bottom: 400px !important;
+			}
+
+			/* Left padding is applied at the editor component level, so we should remove it from the lines */
+			.CodeMirror pre.CodeMirror-line,
+			.CodeMirror pre.CodeMirror-line-like {
+				padding-left: 0;
 			}
 
 			.CodeMirror-sizer {
@@ -589,7 +620,7 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 		function pointerInsideEditor(x: number, y: number) {
 			const elements = document.getElementsByClassName('codeMirrorEditor');
 			if (!elements.length) return null;
-			const rect = elements[0].getBoundingClientRect();
+			const rect = convertToScreenCoordinates(Setting.value('windowContentZoomFactor'), elements[0].getBoundingClientRect());
 			return rect.x < x && rect.y < y && rect.right > x && rect.bottom > y;
 		}
 
@@ -599,7 +630,6 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 			const menu = new Menu();
 
 			const hasSelectedText = editorRef.current && !!editorRef.current.getSelection() ;
-			const clipboardText = clipboard.readText();
 
 			menu.append(
 				new MenuItem({
@@ -626,12 +656,7 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 					label: _('Paste'),
 					enabled: true,
 					click: async () => {
-						if (clipboardText) {
-							editorPasteText();
-						} else {
-							// To handle pasting images
-							onEditorPaste();
-						}
+						editorPaste();
 					},
 				})
 			);
@@ -665,7 +690,7 @@ function CodeMirror(props: NoteBodyEditorProps, ref: any) {
 		return () => {
 			bridge().window().webContents.off('context-menu', onContextMenu);
 		};
-	}, []);
+	}, [props.plugins]);
 
 	function renderEditor() {
 

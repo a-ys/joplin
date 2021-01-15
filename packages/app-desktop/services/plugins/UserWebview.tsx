@@ -7,12 +7,14 @@ import useSubmitHandler from './hooks/useSubmitHandler';
 import useHtmlLoader from './hooks/useHtmlLoader';
 import useWebviewToPluginMessages from './hooks/useWebviewToPluginMessages';
 import useScriptLoader from './hooks/useScriptLoader';
-const styled = require('styled-components').default;
+import Logger from '@joplin/lib/Logger';
+import styled from 'styled-components';
+
+const logger = Logger.create('UserWebview');
 
 export interface Props {
 	html: string;
 	scripts: string[];
-	onMessage: Function;
 	pluginId: string;
 	viewId: string;
 	themeId: number;
@@ -72,6 +74,9 @@ function UserWebview(props: Props, ref: any) {
 	function postMessage(name: string, args: any = null) {
 		const win = frameWindow();
 		if (!win) return;
+
+		logger.debug('Got message', name, args);
+
 		win.postMessage({ target: 'webview', name, args }, '*');
 	}
 
@@ -112,9 +117,10 @@ function UserWebview(props: Props, ref: any) {
 
 	useWebviewToPluginMessages(
 		frameWindow(),
-		props.onMessage,
+		isReady,
 		props.pluginId,
-		props.viewId
+		props.viewId,
+		postMessage
 	);
 
 	useScriptLoader(

@@ -8,9 +8,8 @@ import NoteEditor from '../NoteEditor/NoteEditor';
 import NoteContentPropertiesDialog from '../NoteContentPropertiesDialog';
 import ShareNoteDialog from '../ShareNoteDialog';
 import CommandService from '@joplin/lib/services/CommandService';
-import PluginService from '@joplin/lib/services/plugins/PluginService';
 import { PluginStates, utils as pluginUtils } from '@joplin/lib/services/plugins/reducer';
-import SideBar from '../SideBar/SideBar';
+import Sidebar from '../Sidebar/Sidebar';
 import UserWebview from '../../services/plugins/UserWebview';
 import UserWebviewDialog from '../../services/plugins/UserWebviewDialog';
 import { ContainerType } from '@joplin/lib/services/plugins/WebviewController';
@@ -154,7 +153,6 @@ class MainScreenComponent extends React.Component<Props, State> {
 		this.notePropertiesDialog_close = this.notePropertiesDialog_close.bind(this);
 		this.noteContentPropertiesDialog_close = this.noteContentPropertiesDialog_close.bind(this);
 		this.shareNoteDialog_close = this.shareNoteDialog_close.bind(this);
-		this.userWebview_message = this.userWebview_message.bind(this);
 		this.resizableLayout_resize = this.resizableLayout_resize.bind(this);
 		this.resizableLayout_renderItem = this.resizableLayout_renderItem.bind(this);
 		this.resizableLayout_moveButtonClick = this.resizableLayout_moveButtonClick.bind(this);
@@ -211,7 +209,7 @@ class MainScreenComponent extends React.Component<Props, State> {
 		let output = null;
 
 		try {
-			output = loadLayout(userLayout, defaultLayout, rootLayoutSize);
+			output = loadLayout(Object.keys(userLayout).length ? userLayout : null, defaultLayout, rootLayoutSize);
 
 			if (!findItemByKey(output, 'sideBar') || !findItemByKey(output, 'noteList') || !findItemByKey(output, 'editor')) {
 				throw new Error('"sideBar", "noteList" and "editor" must be present in the layout');
@@ -330,7 +328,7 @@ class MainScreenComponent extends React.Component<Props, State> {
 	layoutModeListenerKeyDown(event: any) {
 		if (event.key !== 'Escape') return;
 		if (!this.props.layoutMoveMode) return;
-		CommandService.instance().execute('toggleLayoutMoveMode');
+		void CommandService.instance().execute('toggleLayoutMoveMode');
 	}
 
 	componentDidMount() {
@@ -370,6 +368,7 @@ class MainScreenComponent extends React.Component<Props, State> {
 					pageSize: Setting.value('export.pdfPageSize'),
 					landscape: Setting.value('export.pdfPageOrientation') === 'landscape',
 					customCss: this.props.customCss,
+					plugins: this.props.plugins,
 				});
 				await shim.fsDriver().writeFile(options.path, pdfData, 'buffer');
 			} catch (error) {
@@ -563,10 +562,6 @@ class MainScreenComponent extends React.Component<Props, State> {
 		}
 	}
 
-	userWebview_message(event: any) {
-		PluginService.instance().pluginById(event.pluginId).viewController(event.viewId).emitMessage(event);
-	}
-
 	resizableLayout_resize(event: any) {
 		this.updateMainLayout(event.layout);
 	}
@@ -579,9 +574,11 @@ class MainScreenComponent extends React.Component<Props, State> {
 	resizableLayout_renderItem(key: string, event: any) {
 		const eventEmitter = event.eventEmitter;
 
+		// const viewsToRemove:string[] = [];
+
 		const components: any = {
 			sideBar: () => {
-				return <SideBar key={key} />;
+				return <Sidebar key={key} />;
 			},
 
 			noteList: () => {
@@ -607,26 +604,46 @@ class MainScreenComponent extends React.Component<Props, State> {
 			const viewInfo = pluginUtils.viewInfoByViewId(this.props.plugins, event.item.key);
 
 			if (!viewInfo) {
+				// Note that it will happen when the component is rendered
+				// before the plugins have loaded their views, so because of
+				// this we need to keep the view in the layout.
+				//
+				// But it can also be a problem if the view really is invalid
+				// due to a faulty plugin as currently there would be no way to
+				// remove it.
 				console.warn(`Could not find plugin associated with view: ${event.item.key}`);
 				return null;
+			} else {
+				const { view, plugin } = viewInfo;
+
+				return <UserWebview
+					key={view.id}
+					viewId={view.id}
+					themeId={this.props.themeId}
+					html={view.html}
+					scripts={view.scripts}
+					pluginId={plugin.id}
+					borderBottom={true}
+					fitToContent={false}
+				/>;
 			}
-
-			const { view, plugin } = viewInfo;
-
-			return <UserWebview
-				key={view.id}
-				viewId={view.id}
-				themeId={this.props.themeId}
-				html={view.html}
-				scripts={view.scripts}
-				pluginId={plugin.id}
-				onMessage={this.userWebview_message}
-				borderBottom={true}
-				fitToContent={false}
-			/>;
+		} else {
+			throw new Error(`Invalid layout component: ${key}`);
 		}
 
-		throw new Error(`Invalid layout component: ${key}`);
+		// if (viewsToRemove.length) {
+		// 	window.requestAnimationFrame(() => {
+		// 		let newLayout = this.props.mainLayout;
+		// 		for (const itemKey of viewsToRemove) {
+		// 			newLayout = removeItem(newLayout, itemKey);
+		// 		}
+
+		// 		if (newLayout !== this.props.mainLayout) {
+		// 			console.warn('Removed invalid views:', viewsToRemove);
+		// 			this.updateMainLayout(newLayout);
+		// 		}
+		// 	});
+		// }
 	}
 
 	renderPluginDialogs() {
@@ -645,7 +662,6 @@ class MainScreenComponent extends React.Component<Props, State> {
 				html={view.html}
 				scripts={view.scripts}
 				pluginId={plugin.id}
-				onMessage={this.userWebview_message}
 				buttons={view.buttons}
 			/>);
 		}

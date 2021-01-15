@@ -6,6 +6,7 @@ const Tag = require('./models/Tag.js');
 const Resource = require('./models/Resource.js');
 const Setting = require('./models/Setting').default;
 const { MarkupToHtml } = require('@joplin/renderer');
+const { wrapError } = require('./errorUtils');
 const { enexXmlToMd } = require('./import-enex-md-gen.js');
 const { enexXmlToHtml } = require('./import-enex-html-gen.js');
 const time = require('./time').default;
@@ -14,6 +15,7 @@ const md5 = require('md5');
 const { Base64Decode } = require('base64-stream');
 const md5File = require('md5-file');
 const shim = require('./shim').default;
+const { mime } = require('./mime-utils');
 
 // const Promise = require('promise');
 const fs = require('fs-extra');
@@ -138,28 +140,36 @@ async function fuzzyMatch(note) {
 // At this point we have the resource has it's been parsed from the XML, but additional
 // processing needs to be done to get the final resource file, its size, MD5, etc.
 async function processNoteResource(resource) {
-	if (resource.dataEncoding == 'base64') {
-		const decodedFilePath = `${resource.dataFilePath}.decoded`;
-		await decodeBase64File(resource.dataFilePath, decodedFilePath);
-		resource.dataFilePath = decodedFilePath;
-	} else if (resource.dataEncoding) {
-		throw new Error(`Cannot decode resource with encoding: ${resource.dataEncoding}`);
-	}
+	if (!resource.hasData) {
+		// Some resources have no data, go figure, so we need a special case for this.
+		resource.id = md5(Date.now() + Math.random());
+		resource.size = 0;
+		resource.dataFilePath = `${Setting.value('tempDir')}/${resource.id}.empty`;
+		await fs.writeFile(resource.dataFilePath, '');
+	} else {
+		if (resource.dataEncoding == 'base64') {
+			const decodedFilePath = `${resource.dataFilePath}.decoded`;
+			await decodeBase64File(resource.dataFilePath, decodedFilePath);
+			resource.dataFilePath = decodedFilePath;
+		} else if (resource.dataEncoding) {
+			throw new Error(`Cannot decode resource with encoding: ${resource.dataEncoding}`);
+		}
 
-	const stats = fs.statSync(resource.dataFilePath);
-	resource.size = stats.size;
+		const stats = fs.statSync(resource.dataFilePath);
+		resource.size = stats.size;
 
-	if (!resource.id) {
-		// If no resource ID is present, the resource ID is actually the MD5 of the data.
-		// This ID will match the "hash" attribute of the corresponding <en-media> tag.
-		// resourceId = md5(decodedData);
-		resource.id = await md5FileAsync(resource.dataFilePath);
-	}
+		if (!resource.id) {
+			// If no resource ID is present, the resource ID is actually the MD5 of the data.
+			// This ID will match the "hash" attribute of the corresponding <en-media> tag.
+			// resourceId = md5(decodedData);
+			resource.id = await md5FileAsync(resource.dataFilePath);
+		}
 
-	if (!resource.id || !resource.size) {
-		const debugTemp = Object.assign({}, resource);
-		debugTemp.data = debugTemp.data ? `${debugTemp.data.substr(0, 32)}...` : debugTemp.data;
-		throw new Error(`This resource was not added because it has no ID or no content: ${JSON.stringify(debugTemp)}`);
+		if (!resource.id || !resource.size) {
+			const debugTemp = Object.assign({}, resource);
+			debugTemp.data = debugTemp.data ? `${debugTemp.data.substr(0, 32)}...` : debugTemp.data;
+			throw new Error(`This resource was not added because it has no ID or no content: ${JSON.stringify(debugTemp)}`);
+		}
 	}
 
 	return resource;
@@ -173,6 +183,7 @@ async function saveNoteResources(note) {
 		const toSave = Object.assign({}, resource);
 		delete toSave.dataFilePath;
 		delete toSave.dataEncoding;
+		delete toSave.hasData;
 
 		// The same resource sometimes appear twice in the same enex (exact same ID and file).
 		// In that case, just skip it - it means two different notes might be linked to the
@@ -314,13 +325,13 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 		async function processNotes() {
 			if (processingNotes) return false;
 
-			try {
-				processingNotes = true;
-				stream.pause();
+			processingNotes = true;
+			stream.pause();
 
-				while (notes.length) {
-					const note = notes.shift();
+			while (notes.length) {
+				const note = notes.shift();
 
+				try {
 					for (let i = 0; i < note.resources.length; i++) {
 						let resource = note.resources[i];
 
@@ -374,9 +385,10 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 					progressState.resourcesCreated += result.resourcesCreated;
 					progressState.notesTagged += result.notesTagged;
 					importOptions.onProgress(progressState);
+				} catch (error) {
+					const newError = wrapError(`Error on note "${note.title}"`, error);
+					importOptions.onError(newError);
 				}
-			} catch (error) {
-				console.error(error);
 			}
 
 			stream.resume();
@@ -405,6 +417,8 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 					if (!noteResource.dataFilePath) {
 						noteResource.dataFilePath = `${Setting.value('tempDir')}/${md5(Date.now() + Math.random())}.base64`;
 					}
+
+					noteResource.hasData = true;
 
 					fs.appendFileSync(noteResource.dataFilePath, text);
 				} else {
@@ -438,6 +452,7 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 				note = {
 					resources: [],
 					tags: [],
+					bodyXml: '',
 				};
 			} else if (n == 'resource-attributes') {
 				noteResourceAttributes = {};
@@ -446,7 +461,9 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 			} else if (n == 'note-attributes') {
 				noteAttributes = {};
 			} else if (n == 'resource') {
-				noteResource = {};
+				noteResource = {
+					hasData: false,
+				};
 			}
 		}));
 
@@ -457,11 +474,7 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 				noteResourceRecognition.objID = extractRecognitionObjId(data);
 			} else if (note) {
 				if (n == 'content') {
-					if ('bodyXml' in note) {
-						note.bodyXml += data;
-					} else {
-						note.bodyXml = data;
-					}
+					note.bodyXml += data;
 				}
 			}
 		}));
@@ -504,13 +517,31 @@ function importEnex(parentFolderId, filePath, importOptions = null) {
 
 				noteAttributes = null;
 			} else if (n == 'resource') {
+				let mimeType = noteResource.mime ? noteResource.mime.trim() : '';
+
+				// Evernote sometimes gives an invalid or generic
+				// "application/octet-stream" mime type for files that could
+				// have a valid mime type, based on the extension. So in
+				// general, we trust the filename more than the provided mime
+				// type.
+				// https://discourse.joplinapp.org/t/importing-a-note-with-a-zip-file/12123
+				if (noteResource.filename) {
+					const mimeTypeFromFile = mime.fromFilename(noteResource.filename);
+					if (mimeTypeFromFile && mimeTypeFromFile !== mimeType) {
+						// Don't print statement by default because it would show up in test units
+						// console.info(`Invalid mime type "${mimeType}" for resource "${noteResource.filename}". Using "${mimeTypeFromFile}" instead.`);
+						mimeType = mimeTypeFromFile;
+					}
+				}
+
 				note.resources.push({
 					id: noteResource.id,
 					dataFilePath: noteResource.dataFilePath,
 					dataEncoding: noteResource.dataEncoding,
-					mime: noteResource.mime ? noteResource.mime.trim() : '',
+					mime: mimeType,
 					title: noteResource.filename ? noteResource.filename.trim() : '',
 					filename: noteResource.filename ? noteResource.filename.trim() : '',
+					hasData: noteResource.hasData,
 				});
 
 				noteResource = null;

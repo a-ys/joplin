@@ -14,7 +14,14 @@ export interface Options {
 	enableLongPress?: boolean;
 }
 
-export default function(href: string, options: Options = null) {
+export interface LinkReplacementResult {
+	html: string;
+	resource: any;
+	resourceReady: boolean;
+	resourceFullPath: string;
+}
+
+export default function(href: string, options: Options = null): LinkReplacementResult {
 	options = {
 		title: '',
 		resources: {},
@@ -35,6 +42,7 @@ export default function(href: string, options: Options = null) {
 	let hrefAttr = '#';
 	let mime = '';
 	let resourceId = '';
+	let resource = null;
 	if (isResourceUrl) {
 		resourceId = resourceHrefInfo.itemId;
 
@@ -44,11 +52,18 @@ export default function(href: string, options: Options = null) {
 		if (result && result.item) {
 			if (!title) title = result.item.title;
 			mime = result.item.mime;
+			resource = result.item;
 		}
 
 		if (result && resourceStatus !== 'ready' && !options.plainResourceRendering) {
 			const icon = utils.resourceStatusFile(resourceStatus);
-			return `<a class="not-loaded-resource resource-status-${resourceStatus}" data-resource-id="${resourceId}">` + `<img src="data:image/svg+xml;utf8,${htmlentities(icon)}"/>`;
+
+			return {
+				resourceReady: false,
+				html: `<a class="not-loaded-resource resource-status-${resourceStatus}" data-resource-id="${resourceId}">` + `<img src="data:image/svg+xml;utf8,${htmlentities(icon)}"/>`,
+				resource,
+				resourceFullPath: null,
+			};
 		} else {
 			href = `joplin://${resourceId}`;
 			if (resourceHrefInfo.hash) href += `#${resourceHrefInfo.hash}`;
@@ -76,7 +91,9 @@ export default function(href: string, options: Options = null) {
 	if (options.enableLongPress && !!resourceId) {
 		const onClick = `${options.postMessageSyntax}(${JSON.stringify(href)})`;
 		const onLongClick = `${options.postMessageSyntax}("longclick:${resourceId}")`;
-		const touchStart = `t=setTimeout(()=>{t=null; ${onLongClick};}, ${utils.longPressDelay});`;
+		// if t is set when ontouchstart is called it means the user has already touched the screen once and this is the 2nd touch
+		// in this case we assume the user is trying to zoom and we don't want to show the menu
+		const touchStart = `if (typeof(t) !== "undefined" && !!t) { clearTimeout(t); t = null; } else { t = setTimeout(() => { t = null; ${onLongClick}; }, ${utils.longPressDelay}); }`;
 		const cancel = 'if (!!t) {clearTimeout(t); t=null;';
 		const touchEnd = `${cancel} ${onClick};}`;
 		js = `ontouchstart='${touchStart}' ontouchend='${touchEnd}' ontouchcancel='${cancel} ontouchmove="${cancel}'`;
@@ -100,5 +117,10 @@ export default function(href: string, options: Options = null) {
 		if (js) attrHtml.push(js);
 	}
 
-	return `<a ${attrHtml.join(' ')}>${icon}`;
+	return {
+		html: `<a ${attrHtml.join(' ')}>${icon}`,
+		resourceReady: true,
+		resource,
+		resourceFullPath: resource && options?.ResourceModel?.fullPath ? options.ResourceModel.fullPath(resource) : null,
+	};
 }

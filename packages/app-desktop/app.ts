@@ -22,6 +22,9 @@ import { LayoutItem } from './gui/ResizableLayout/utils/types';
 import stateToWhenClauseContext from './services/commands/stateToWhenClauseContext';
 import ResourceService from '@joplin/lib/services/ResourceService';
 import ExternalEditWatcher from '@joplin/lib/services/ExternalEditWatcher';
+import produce from 'immer';
+import iterateItems from './gui/ResizableLayout/utils/iterateItems';
+import validateLayout from './gui/ResizableLayout/utils/validateLayout';
 
 const { FoldersScreenUtils } = require('@joplin/lib/folders-screen-utils.js');
 const MasterKey = require('@joplin/lib/models/MasterKey');
@@ -247,6 +250,29 @@ class Application extends BaseApplication {
 				};
 				break;
 
+			case 'MAIN_LAYOUT_SET_ITEM_PROP':
+
+				{
+					let newLayout = produce(state.mainLayout, (draftLayout: LayoutItem) => {
+						iterateItems(draftLayout, (_itemIndex: number, item: LayoutItem, _parent: LayoutItem) => {
+							if (item.key === action.itemKey) {
+								(item as any)[action.propName] = action.propValue;
+								return false;
+							}
+							return true;
+						});
+					});
+
+					if (newLayout !== state.mainLayout) newLayout = validateLayout(newLayout);
+
+					newState = {
+						...state,
+						mainLayout: newLayout,
+					};
+				}
+
+				break;
+
 			case 'NOTE_FILE_WATCHER_ADD':
 
 				if (newState.watchedNoteFiles.indexOf(action.id) < 0) {
@@ -424,7 +450,7 @@ class Application extends BaseApplication {
 			const contextMenu = Menu.buildFromTemplate([
 				{ label: _('Open %s', app.electronApp().name), click: () => { app.window().show(); } },
 				{ type: 'separator' },
-				{ label: _('Quit'), click: () => { app.quit(); } },
+				{ label: _('Quit'), click: () => { void app.quit(); } },
 			]);
 			app.createTray(contextMenu);
 		}
@@ -664,7 +690,7 @@ class Application extends BaseApplication {
 		this.updateTray();
 
 		shim.setTimeout(() => {
-			AlarmService.garbageCollect();
+			void AlarmService.garbageCollect();
 		}, 1000 * 60 * 60);
 
 		if (Setting.value('startMinimized') && Setting.value('showTrayIcon')) {
@@ -676,12 +702,12 @@ class Application extends BaseApplication {
 		ResourceService.runInBackground();
 
 		if (Setting.value('env') === 'dev') {
-			AlarmService.updateAllNotifications();
+			void AlarmService.updateAllNotifications();
 		} else {
 			reg.scheduleSync(1000).then(() => {
 				// Wait for the first sync before updating the notifications, since synchronisation
 				// might change the notifications.
-				AlarmService.updateAllNotifications();
+				void AlarmService.updateAllNotifications();
 
 				DecryptionWorker.instance().scheduleStart();
 			});
@@ -712,6 +738,7 @@ class Application extends BaseApplication {
 				revisionService: RevisionService.instance(),
 				migrationService: MigrationService.instance(),
 				decryptionWorker: DecryptionWorker.instance(),
+				commandService: CommandService.instance(),
 				bridge: bridge(),
 			};
 		};

@@ -1,5 +1,7 @@
 import shim from '../shim';
 import { _, supportedLocalesToLanguages, defaultLocale } from '../locale';
+import { ltrimSlashes } from '../path-utils';
+import eventManager from '../eventManager';
 const BaseModel = require('../BaseModel').default;
 const { Database } = require('../database.js');
 const SyncTargetRegistry = require('../SyncTargetRegistry.js');
@@ -78,8 +80,10 @@ class Setting extends BaseModel {
 	private static keys_: string[] = null;
 	private static cache_: CacheItem[] = [];
 	private static saveTimeoutId_: any = null;
+	private static changeEventTimeoutId_: any = null;
 	private static customMetadata_: SettingItems = {};
 	private static customSections_: SettingSections = {};
+	private static changedKeys_: string[] = [];
 
 	static tableName() {
 		return 'settings';
@@ -91,8 +95,10 @@ class Setting extends BaseModel {
 
 	static async reset() {
 		if (this.saveTimeoutId_) shim.clearTimeout(this.saveTimeoutId_);
+		if (this.changeEventTimeoutId_) shim.clearTimeout(this.changeEventTimeoutId_);
 
 		this.saveTimeoutId_ = null;
+		this.changeEventTimeoutId_ = null;
 		this.metadata_ = null;
 		this.keys_ = null;
 		this.cache_ = [];
@@ -160,7 +166,7 @@ class Setting extends BaseModel {
 				section: 'sync',
 				label: () => _('Synchronisation target'),
 				description: (appType: string) => {
-					return appType !== 'cli' ? null : _('The target to synchonise to. Each sync target may have additional parameters which are named as `sync.NUM.NAME` (all documented below).');
+					return appType !== 'cli' ? null : _('The target to synchronise to. Each sync target may have additional parameters which are named as `sync.NUM.NAME` (all documented below).');
 				},
 				options: () => {
 					return SyncTargetRegistry.idAndLabelPlainObject(platform);
@@ -309,6 +315,52 @@ class Setting extends BaseModel {
 				secure: true,
 			},
 
+			'sync.9.path': {
+				value: '',
+				type: SettingItemType.String,
+				section: 'sync',
+				show: (settings: any) => {
+					return settings['sync.target'] == SyncTargetRegistry.nameToId('joplinServer');
+				},
+				public: true,
+				label: () => _('Joplin Server URL'),
+				description: () => emptyDirWarning,
+			},
+			'sync.9.directory': {
+				value: 'Apps/Joplin',
+				type: SettingItemType.String,
+				section: 'sync',
+				show: (settings: any) => {
+					return settings['sync.target'] == SyncTargetRegistry.nameToId('joplinServer');
+				},
+				filter: value => {
+					return value ? ltrimSlashes(rtrimSlashes(value)) : '';
+				},
+				public: true,
+				label: () => _('Joplin Server Directory'),
+			},
+			'sync.9.username': {
+				value: '',
+				type: SettingItemType.String,
+				section: 'sync',
+				show: (settings: any) => {
+					return settings['sync.target'] == SyncTargetRegistry.nameToId('joplinServer');
+				},
+				public: true,
+				label: () => _('Joplin Server username'),
+			},
+			'sync.9.password': {
+				value: '',
+				type: SettingItemType.String,
+				section: 'sync',
+				show: (settings: any) => {
+					return settings['sync.target'] == SyncTargetRegistry.nameToId('joplinServer');
+				},
+				public: true,
+				label: () => _('Joplin Server password'),
+				secure: true,
+			},
+
 			'sync.5.syncTargets': { value: {}, type: SettingItemType.Object, public: false },
 
 			'sync.resourceDownloadMode': {
@@ -333,6 +385,7 @@ class Setting extends BaseModel {
 			'sync.3.auth': { value: '', type: SettingItemType.String, public: false },
 			'sync.4.auth': { value: '', type: SettingItemType.String, public: false },
 			'sync.7.auth': { value: '', type: SettingItemType.String, public: false },
+			'sync.9.auth': { value: '', type: SettingItemType.String, public: false },
 			'sync.1.context': { value: '', type: SettingItemType.String, public: false },
 			'sync.2.context': { value: '', type: SettingItemType.String, public: false },
 			'sync.3.context': { value: '', type: SettingItemType.String, public: false },
@@ -341,6 +394,7 @@ class Setting extends BaseModel {
 			'sync.6.context': { value: '', type: SettingItemType.String, public: false },
 			'sync.7.context': { value: '', type: SettingItemType.String, public: false },
 			'sync.8.context': { value: '', type: SettingItemType.String, public: false },
+			'sync.9.context': { value: '', type: SettingItemType.String, public: false },
 
 			'sync.maxConcurrentConnections': { value: 5, type: SettingItemType.Int, public: true, advanced: true, section: 'sync', label: () => _('Max concurrent connections'), minimum: 1, maximum: 20, step: 1 },
 
@@ -349,6 +403,8 @@ class Setting extends BaseModel {
 			// selected folder. It corresponds in general to the currently selected folder or
 			// to the last folder that was selected.
 			activeFolderId: { value: '', type: SettingItemType.String, public: false },
+
+			richTextBannerDismissed: { value: false, type: SettingItemType.Bool, public: false },
 
 			firstStart: { value: true, type: SettingItemType.Bool, public: false },
 			locale: {
@@ -444,6 +500,12 @@ class Setting extends BaseModel {
 				label: () => _('Preferred dark theme'),
 				section: 'appearance',
 				options: () => themeOptions(),
+			},
+
+			notificationPermission: {
+				value: '',
+				type: SettingItemType.String,
+				public: false,
 			},
 
 			showNoteCounts: { value: true, type: SettingItemType.Bool, public: false, advanced: true, appTypes: ['desktop'], label: () => _('Show note counts') },
@@ -562,7 +624,6 @@ class Setting extends BaseModel {
 				section: 'plugins',
 				public: true,
 				appTypes: ['desktop'],
-				label: () => _('Plugins'),
 				needRestart: true,
 				autoSave: true,
 			},
@@ -572,22 +633,28 @@ class Setting extends BaseModel {
 				type: SettingItemType.String,
 				section: 'plugins',
 				public: true,
+				advanced: true,
 				appTypes: ['desktop'],
 				label: () => 'Development plugins',
 				description: () => 'You may add multiple plugin paths, each separated by a comma. You will need to restart the application for the changes to take effect.',
 			},
 
 			// Deprecated - use markdown.plugin.*
-			'markdown.softbreaks': { value: true, type: SettingItemType.Bool, public: false, appTypes: ['mobile', 'desktop'] },
+			'markdown.softbreaks': { value: false, type: SettingItemType.Bool, public: false, appTypes: ['mobile', 'desktop'] },
 			'markdown.typographer': { value: false, type: SettingItemType.Bool, public: false, appTypes: ['mobile', 'desktop'] },
 			// Deprecated
 
-			'markdown.plugin.softbreaks': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable soft breaks')}${wysiwygYes}` },
+			'markdown.plugin.softbreaks': { value: false, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable soft breaks')}${wysiwygYes}` },
 			'markdown.plugin.typographer': { value: false, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable typographer support')}${wysiwygYes}` },
+			'markdown.plugin.linkify': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable Linkify')}${wysiwygYes}` },
+
 			'markdown.plugin.katex': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable math expressions')}${wysiwygYes}` },
 			'markdown.plugin.fountain': { value: false, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable Fountain syntax support')}${wysiwygYes}` },
 			'markdown.plugin.mermaid': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable Mermaid diagrams support')}${wysiwygYes}` },
 
+			'markdown.plugin.audioPlayer': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable audio player')}${wysiwygNo}` },
+			'markdown.plugin.videoPlayer': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable video player')}${wysiwygNo}` },
+			'markdown.plugin.pdfViewer': { value: !mobilePlatform, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['desktop'], label: () => `${_('Enable PDF viewer')}${wysiwygNo}` },
 			'markdown.plugin.mark': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable ==mark== syntax')}${wysiwygNo}` },
 			'markdown.plugin.footnote': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable footnotes')}${wysiwygNo}` },
 			'markdown.plugin.toc': { value: true, type: SettingItemType.Bool, section: 'markdownPlugins', public: true, appTypes: ['mobile', 'desktop'], label: () => `${_('Enable table of contents extension')}${wysiwygNo}` },
@@ -780,7 +847,6 @@ class Setting extends BaseModel {
 				type: SettingItemType.Bool,
 				public: true,
 				appTypes: ['desktop'],
-				advanced: true,
 				label: () => 'Enable spell checking in Markdown editor? (WARNING BETA feature)',
 				description: () => 'Spell checker in the Markdown editor was previously unstable (cursor location was not stable, sometimes edits would not be saved or reflected in the viewer, etc.) however it appears to be more reliable now. If you notice any issue, please report it on GitHub or the Joplin Forum (Help -> Joplin Forum)',
 			},
@@ -1009,6 +1075,8 @@ class Setting extends BaseModel {
 
 	static load() {
 		this.cancelScheduleSave();
+		this.cancelScheduleChangeEvent();
+
 		this.cache_ = [];
 		return this.modelSelectAll('SELECT * FROM settings').then(async (rows: any[]) => {
 			this.cache_ = [];
@@ -1093,6 +1161,8 @@ class Setting extends BaseModel {
 
 				if (c.value === value) return;
 
+				this.changedKeys_.push(key);
+
 				// Don't log this to prevent sensitive info (passwords, auth tokens...) to end up in logs
 				// this.logger().info('Setting: ' + key + ' = ' + c.value + ' => ' + value);
 
@@ -1108,6 +1178,7 @@ class Setting extends BaseModel {
 				});
 
 				this.scheduleSave();
+				this.scheduleChangeEvent();
 				return;
 			}
 		}
@@ -1123,7 +1194,10 @@ class Setting extends BaseModel {
 			value: this.formatValue(key, value),
 		});
 
+		this.changedKeys_.push(key);
+
 		this.scheduleSave();
+		this.scheduleChangeEvent();
 	}
 
 	static incValue(key: string, inc: any) {
@@ -1363,6 +1437,36 @@ class Setting extends BaseModel {
 		this.logger().info('Settings have been saved.');
 	}
 
+	static scheduleChangeEvent() {
+		if (this.changeEventTimeoutId_) shim.clearTimeout(this.changeEventTimeoutId_);
+
+		this.changeEventTimeoutId_ = shim.setTimeout(() => {
+			this.emitScheduledChangeEvent();
+		}, 1000);
+	}
+
+	static cancelScheduleChangeEvent() {
+		if (this.changeEventTimeoutId_) shim.clearTimeout(this.changeEventTimeoutId_);
+		this.changeEventTimeoutId_ = null;
+	}
+
+	public static emitScheduledChangeEvent() {
+		if (!this.changeEventTimeoutId_) return;
+
+		shim.clearTimeout(this.changeEventTimeoutId_);
+		this.changeEventTimeoutId_ = null;
+
+		if (!this.changedKeys_.length) {
+			// Sanity check - shouldn't happen
+			this.logger().warn('Trying to dispatch a change event without any changed keys');
+			return;
+		}
+
+		const keys = this.changedKeys_.slice();
+		this.changedKeys_ = [];
+		eventManager.emit('settingsChange', { keys });
+	}
+
 	static scheduleSave() {
 		if (!Setting.autoSaveEnabled) return;
 
@@ -1443,7 +1547,7 @@ class Setting extends BaseModel {
 		if (name === 'appearance') return _('Appearance');
 		if (name === 'note') return _('Note');
 		if (name === 'markdownPlugins') return _('Markdown');
-		if (name === 'plugins') return `${_('Plugins')} (Beta)`;
+		if (name === 'plugins') return _('Plugins');
 		if (name === 'application') return _('Application');
 		if (name === 'revisionService') return _('Note History');
 		if (name === 'encryption') return _('Encryption');

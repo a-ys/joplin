@@ -7,6 +7,7 @@ import shim from '../../shim';
 import { filename, dirname, rtrimSlashes } from '../../path-utils';
 import Setting from '../../models/Setting';
 import Logger from '../../Logger';
+import RepositoryApi from './RepositoryApi';
 const compareVersions = require('compare-versions');
 const uslug = require('uslug');
 const md5File = require('md5-file/promise');
@@ -66,7 +67,7 @@ export default class PluginService extends BaseService {
 	private plugins_: Plugins = {};
 	private runner_: BasePluginRunner = null;
 
-	initialize(appVersion: string, platformImplementation: any, runner: BasePluginRunner, store: any) {
+	public initialize(appVersion: string, platformImplementation: any, runner: BasePluginRunner, store: any) {
 		this.appVersion_ = appVersion;
 		this.store_ = store;
 		this.runner_ = runner;
@@ -112,6 +113,15 @@ export default class PluginService extends BaseService {
 
 	public serializePluginSettings(settings: PluginSettings): any {
 		return JSON.stringify(settings);
+	}
+
+	public pluginIdByContentScriptId(contentScriptId: string): string {
+		for (const pluginId in this.plugins_) {
+			const plugin = this.plugins_[pluginId];
+			const contentScript = plugin.contentScriptById(contentScriptId);
+			if (contentScript) return pluginId;
+		}
+		return null;
 	}
 
 	private async parsePluginJsBundle(jsBundleString: string) {
@@ -281,7 +291,7 @@ export default class PluginService extends BaseService {
 		}
 
 		for (const pluginPath of pluginPaths) {
-			if (pluginPath.indexOf('_') === 0) {
+			if (filename(pluginPath).indexOf('_') === 0) {
 				logger.info(`Plugin name starts with "_" and has not been loaded: ${pluginPath}`);
 				continue;
 			}
@@ -326,6 +336,13 @@ export default class PluginService extends BaseService {
 
 		const pluginApi = new Global(this.platformImplementation_, plugin, this.store_);
 		return this.runner_.run(plugin, pluginApi);
+	}
+
+	public async installPluginFromRepo(repoApi: RepositoryApi, pluginId: string): Promise<Plugin> {
+		const pluginPath = await repoApi.downloadPlugin(pluginId);
+		const plugin = await this.installPlugin(pluginPath);
+		await shim.fsDriver().remove(pluginPath);
+		return plugin;
 	}
 
 	public async installPlugin(jplPath: string): Promise<Plugin> {
@@ -383,6 +400,10 @@ export default class PluginService extends BaseService {
 		}
 
 		return newSettings;
+	}
+
+	public async destroy() {
+		await this.runner_.waitForSandboxCalls();
 	}
 
 }

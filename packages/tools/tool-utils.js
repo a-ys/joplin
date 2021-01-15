@@ -40,6 +40,14 @@ function commandToString(commandName, args = []) {
 	return output.join(' ');
 }
 
+toolUtils.resolveRelativePathWithinDir = function(baseDir, ...relativePath) {
+	const path = require('path');
+	const resolvedBaseDir = path.resolve(baseDir);
+	const resolvedPath = path.resolve(baseDir, ...relativePath);
+	if (resolvedPath.indexOf(resolvedBaseDir) !== 0) throw new Error(`Resolved path for relative path "${JSON.stringify(relativePath)}" is not within base directory "${baseDir}" (Was resolved to ${resolvedPath})`);
+	return resolvedPath;
+};
+
 toolUtils.execCommandVerbose = function(commandName, args = []) {
 	console.info(`> ${commandToString(commandName, args)}`);
 	const promise = execa(commandName, args);
@@ -87,6 +95,17 @@ toolUtils.deleteLink = async function(path) {
 			// ignore
 		}
 	}
+};
+
+toolUtils.setPackagePrivateField = async function(filePath, value) {
+	const text = await fs.readFile(filePath, 'utf8');
+	const obj = JSON.parse(text);
+	if (!value) {
+		delete obj.private;
+	} else {
+		obj.private = true;
+	}
+	await fs.writeFile(filePath, JSON.stringify(obj, null, 2), 'utf8');
 };
 
 toolUtils.credentialDir = async function() {

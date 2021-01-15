@@ -33,6 +33,19 @@ export default class ToolbarButtonUtils {
 		return this.service_;
 	}
 
+	private isEditorCommand(commandName: string) {
+		return CommandService.isEditorCommand(commandName) && !(
+			// These commands are attached to the editor runtime,
+			// but they either handle focus themselves or don't need
+			// to focus the editor
+			commandName === 'textLink' ||
+			commandName === 'insertText' ||
+			commandName === 'scrollToHash' ||
+			commandName === 'selectedText' ||
+			commandName === 'replaceSelection'
+		);
+	}
+
 	private commandToToolbarButton(commandName: string, whenClauseContext: any): ToolbarButtonInfo {
 		const newEnabled = this.service.isEnabled(commandName, whenClauseContext);
 		const newTitle = this.service.title(commandName);
@@ -53,7 +66,10 @@ export default class ToolbarButtonUtils {
 			iconName: command.declaration.iconName,
 			enabled: newEnabled,
 			onClick: async () => {
-				this.service.execute(commandName);
+				void this.service.execute(commandName);
+				if (this.isEditorCommand(commandName)) {
+					void this.service.execute('editor.focus');
+				}
 			},
 			title: newTitle,
 		};

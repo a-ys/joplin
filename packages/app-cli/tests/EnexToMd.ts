@@ -4,7 +4,7 @@ import shim from '@joplin/lib/shim';
 const fs = require('fs-extra');
 const os = require('os');
 const { filename } = require('@joplin/lib/path-utils');
-const { setupDatabaseAndSynchronizer, switchClient } = require('./test-utils.js');
+const { setupDatabaseAndSynchronizer, switchClient, expectNotThrow } = require('./test-utils.js');
 const { enexXmlToMd } = require('@joplin/lib/import-enex-md-gen.js');
 const { importEnex } = require('@joplin/lib/import-enex');
 const Note = require('@joplin/lib/models/Note');
@@ -44,14 +44,18 @@ describe('EnexToMd', function() {
 			}
 
 			if (actualMd !== expectedMd) {
-				console.info('');
-				console.info(`Error converting file: ${htmlFilename}`);
-				console.info('--------------------------------- Got:');
-				console.info(actualMd.split('\n'));
-				console.info('--------------------------------- Expected:');
-				console.info(expectedMd.split('\n'));
-				console.info('--------------------------------------------');
-				console.info('');
+				const result = [];
+
+				result.push('');
+				result.push(`Error converting file: ${htmlFilename}`);
+				result.push('--------------------------------- Got:');
+				result.push(actualMd.split('\n').map((l: string) => `"${l}"`).join('\n'));
+				result.push('--------------------------------- Expected:');
+				result.push(expectedMd.split('\n').map((l: string) => `"${l}"`).join('\n'));
+				result.push('--------------------------------------------');
+				result.push('');
+
+				console.info(result.join('\n'));
 
 				expect(false).toBe(true);
 				// return;
@@ -94,6 +98,52 @@ describe('EnexToMd', function() {
 		const note: NoteEntity = (await Note.all())[0];
 		expect(note.created_time).toBe(1521822724000); // 20180323T163204Z
 		expect(note.updated_time).toBe(1521822724000); // Because this date was invalid, it is set to the created time instead
+	});
+
+	it('should handle empty resources', async () => {
+		const filePath = `${enexSampleBaseDir}/empty_resource.enex`;
+		await expectNotThrow(() => importEnex('', filePath));
+		const all = await Resource.all();
+		expect(all.length).toBe(1);
+		expect(all[0].size).toBe(0);
+	});
+
+	it('should handle empty note content', async () => {
+		const filePath = `${enexSampleBaseDir}/empty_content.enex`;
+		await expectNotThrow(() => importEnex('', filePath));
+		const all = await Note.all();
+		expect(all.length).toBe(1);
+		expect(all[0].title).toBe('China and the case for stimulus.');
+		expect(all[0].body).toBe('');
+	});
+
+	it('should handle invalid mime types', async () => {
+		// This is to handle the case where a resource has an invalid mime type,
+		// but that type can be determined from the filename. For example, in
+		// this thread, the ENEX file contains a "file.zip" file with a mime
+		// type "application/octet-stream", which can later cause problems to
+		// open the file.
+		// https://discourse.joplinapp.org/t/importing-a-note-with-a-zip-file/12123?u=laurent
+		const filePath = `${enexSampleBaseDir}/WithInvalidMime.enex`;
+		await importEnex('', filePath);
+		const all = await Resource.all();
+		expect(all.length).toBe(1);
+		expect(all[0].mime).toBe('application/zip');
+	});
+
+	it('should keep importing notes when one of them is corrupted', async () => {
+		const filePath = `${enexSampleBaseDir}/ImportTestCorrupt.enex`;
+		const errors: any[] = [];
+		await importEnex('', filePath, {
+			onError: (error: any) => errors.push(error),
+		});
+		const notes = await Note.all();
+		expect(notes.length).toBe(2);
+
+		// Check that an error was recorded and that it includes the title
+		// of the note, so that it can be found back by the user
+		expect(errors.length).toBe(1);
+		expect(errors[0].message.includes('Note 2')).toBe(true);
 	});
 
 });

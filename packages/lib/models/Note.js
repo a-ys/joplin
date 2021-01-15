@@ -141,7 +141,7 @@ class Note extends BaseItem {
 			useAbsolutePaths: false,
 		}, options);
 
-		this.logger().debug('replaceResourceInternalToExternalLinks', 'options:', options, 'body:', body);
+		// this.logger().debug('replaceResourceInternalToExternalLinks', 'options:', options, 'body:', body);
 
 		const resourceIds = await this.linkedResourceIds(body);
 		const Resource = this.getClass('Resource');
@@ -161,7 +161,7 @@ class Note extends BaseItem {
 			body = body.replace(new RegExp(`:/${id}`, 'gi'), markdownUtils.escapeLinkUrl(resourcePath));
 		}
 
-		this.logger().debug('replaceResourceInternalToExternalLinks result', body);
+		// this.logger().debug('replaceResourceInternalToExternalLinks result', body);
 
 		return body;
 	}
@@ -171,7 +171,7 @@ class Note extends BaseItem {
 			useAbsolutePaths: false,
 		}, options);
 
-		const pathsToTry = [];
+		let pathsToTry = [];
 		if (options.useAbsolutePaths) {
 			pathsToTry.push(`file://${Setting.value('resourceDir')}`);
 			pathsToTry.push(`file://${shim.pathRelativeToCwd(Setting.value('resourceDir'))}`);
@@ -179,7 +179,22 @@ class Note extends BaseItem {
 			pathsToTry.push(Resource.baseRelativeDirectoryPath());
 		}
 
-		this.logger().debug('replaceResourceExternalToInternalLinks', 'options:', options, 'pathsToTry:', pathsToTry, 'body:', body);
+		// We support both the escaped and unescaped versions because both
+		// of those paths are valid:
+		//
+		// [](file://C:/I like spaces in paths/abcdefg.jpg)
+		// [](file://C:/I%20like%20spaces%20in%20paths/abcdefg.jpg)
+		//
+		// https://discourse.joplinapp.org/t/12986/4
+		const temp = [];
+		for (const p of pathsToTry) {
+			temp.push(p);
+			temp.push(markdownUtils.escapeLinkUrl(p));
+		}
+
+		pathsToTry = temp;
+
+		// this.logger().debug('replaceResourceExternalToInternalLinks', 'options:', options, 'pathsToTry:', pathsToTry);
 
 		for (const basePath of pathsToTry) {
 			const reStrings = [
@@ -200,7 +215,7 @@ class Note extends BaseItem {
 			body = body.replace(/\(joplin:\/\/([a-zA-Z0-9]{32})\)/g, '(:/$1)');
 		}
 
-		this.logger().debug('replaceResourceExternalToInternalLinks result', body);
+		// this.logger().debug('replaceResourceExternalToInternalLinks result', body);
 
 		return body;
 	}
@@ -245,6 +260,8 @@ class Note extends BaseItem {
 			return noteFieldComp(a.id, b.id);
 		};
 
+		const collator = this.getNaturalSortingCollator();
+
 		return notes.sort((a, b) => {
 			if (noteOnTop(a) && !noteOnTop(b)) return -1;
 			if (!noteOnTop(a) && noteOnTop(b)) return +1;
@@ -257,8 +274,13 @@ class Note extends BaseItem {
 				let bProp = b[order.by];
 				if (typeof aProp === 'string') aProp = aProp.toLowerCase();
 				if (typeof bProp === 'string') bProp = bProp.toLowerCase();
-				if (aProp < bProp) r = +1;
-				if (aProp > bProp) r = -1;
+
+				if (order.by === 'title') {
+					r = -1 * collator.compare(aProp, bProp);
+				} else {
+					if (aProp < bProp) r = +1;
+					if (aProp > bProp) r = -1;
+				}
 				if (order.dir == 'ASC') r = -r;
 				if (r !== 0) return r;
 			}
@@ -362,6 +384,7 @@ class Note extends BaseItem {
 			tempOptions.conditions = cond;
 
 			const uncompletedTodos = await this.search(tempOptions);
+			this.handleTitleNaturalSorting(uncompletedTodos, tempOptions);
 
 			cond = options.conditions.slice();
 			if (hasNotes && hasTodos) {
@@ -374,6 +397,7 @@ class Note extends BaseItem {
 			tempOptions.conditions = cond;
 			if ('limit' in tempOptions) tempOptions.limit -= uncompletedTodos.length;
 			const theRest = await this.search(tempOptions);
+			this.handleTitleNaturalSorting(theRest, tempOptions);
 
 			return uncompletedTodos.concat(theRest);
 		}
@@ -386,7 +410,10 @@ class Note extends BaseItem {
 			options.conditions.push('is_todo = 1');
 		}
 
-		return this.search(options);
+		const results = await this.search(options);
+		this.handleTitleNaturalSorting(results, options);
+
+		return results;
 	}
 
 	static preview(noteId, options = null) {
@@ -845,6 +872,17 @@ class Note extends BaseItem {
 		} finally {
 			defer();
 		}
+	}
+
+	static handleTitleNaturalSorting(items, options) {
+		if (options.order.length > 0 && options.order[0].by === 'title') {
+			const collator = this.getNaturalSortingCollator();
+			items.sort((a, b) => ((options.order[0].dir === 'ASC') ? 1 : -1) * collator.compare(a.title, b.title));
+		}
+	}
+
+	static getNaturalSortingCollator() {
+		return new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 	}
 
 }

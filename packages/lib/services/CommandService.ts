@@ -225,14 +225,17 @@ export default class CommandService extends BaseService {
 
 	public async execute(commandName: string, ...args: any[]): Promise<any | void> {
 		const command = this.commandByName(commandName);
-		this.logger().info('CommandService::execute:', commandName, args);
+		// Some commands such as "showModalMessage" can be executed many
+		// times per seconds, so we should only display this message in
+		// debug mode.
+		if (commandName !== 'showModalMessage') this.logger().debug('CommandService::execute:', commandName, args);
 		if (!command.runtime) throw new Error(`Cannot execute a command without a runtime: ${commandName}`);
 		return command.runtime.execute(this.createContext(), ...args);
 	}
 
 	public scheduleExecute(commandName: string, args: any) {
 		shim.setTimeout(() => {
-			this.execute(commandName, args);
+			void this.execute(commandName, args);
 		}, 10);
 	}
 
@@ -307,4 +310,39 @@ export default class CommandService extends BaseService {
 		return !!command;
 	}
 
+	public static isEditorCommand(commandName: string) {
+		return (commandName.indexOf('editor.') === 0 ||
+				// These commands are grandfathered in, but in the future
+				// all editor commands should start with "editor."
+				commandName === 'insertText' ||
+				commandName === 'scrollToHash' ||
+				commandName === 'textCopy' ||
+				commandName === 'textCut' ||
+				commandName === 'textPaste' ||
+				commandName === 'textSelectAll' ||
+				commandName === 'textBold' ||
+				commandName === 'textItalic' ||
+				commandName === 'textLink' ||
+				commandName === 'textCode' ||
+				commandName === 'attachFile' ||
+				commandName === 'textNumberedList' ||
+				commandName === 'textBulletedList' ||
+				commandName === 'textCheckbox' ||
+				commandName === 'textHeading' ||
+				commandName === 'textHorizontalRule' ||
+				commandName === 'insertDateTime' ||
+				commandName === 'selectedText' ||
+				commandName === 'replaceSelection'
+		);
+	}
+
+	public editorCommandDeclarations(): CommandDeclaration[] {
+		const output = [];
+
+		for (const name in this.commands_) {
+			if (CommandService.isEditorCommand(name)) { output.push(this.commands_[name].declaration); }
+		}
+
+		return output;
+	}
 }

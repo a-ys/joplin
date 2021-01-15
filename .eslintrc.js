@@ -1,4 +1,5 @@
 module.exports = {
+	'root': true,
 	'env': {
 		'browser': true,
 		'es6': true,
@@ -24,6 +25,7 @@ module.exports = {
 		'afterAll': 'readonly',
 		'beforeEach': 'readonly',
 		'afterEach': 'readonly',
+		'jest': 'readonly',
 
 		// React Native variables
 		'__DEV__': 'readonly',
@@ -32,6 +34,9 @@ module.exports = {
 		'browserSupportsPromises_': true,
 		'chrome': 'readonly',
 		'browser': 'readonly',
+
+		// Server admin UI global variables
+		'onDocumentReady': 'readonly',
 
 		'tinymce': 'readonly',
 	},
@@ -60,7 +65,12 @@ module.exports = {
 		'no-var': ['error'],
 		'no-new-func': ['error'],
 		'import/prefer-default-export': ['error'],
-		'import/first': ['error'],
+
+		// This rule should not be enabled since it matters in what order
+		// imports are done, in particular in relation to the shim.setReact
+		// call, which should be done first, but this rule might move it down.
+		// 'import/first': ['error'],
+
 		'no-array-constructor': ['error'],
 		'radix': ['error'],
 
@@ -126,6 +136,10 @@ module.exports = {
 		{
 			// enable the rule specifically for TypeScript files
 			'files': ['*.ts', '*.tsx'],
+			'parserOptions': {
+				// Required for @typescript-eslint/no-floating-promises
+				'project': './tsconfig.eslint.json',
+			},
 			'rules': {
 				// Warn only because it would make it difficult to convert JS classes to TypeScript, unless we
 				// make everything public which is not great. New code however should specify member accessibility.
@@ -152,6 +166,7 @@ module.exports = {
 						'requireLast': false,
 					},
 				}],
+				'@typescript-eslint/no-floating-promises': ['error'],
 			},
 		},
 	],

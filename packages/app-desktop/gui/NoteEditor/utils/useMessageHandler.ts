@@ -3,6 +3,8 @@ import { FormNote } from './types';
 import contextMenu from './contextMenu';
 import ResourceEditWatcher from '@joplin/lib/services/ResourceEditWatcher/index';
 import { _ } from '@joplin/lib/locale';
+import CommandService from '@joplin/lib/services/CommandService';
+import PostMessageService from '@joplin/lib/services/PostMessageService';
 const BaseItem = require('@joplin/lib/models/BaseItem');
 const BaseModel = require('@joplin/lib/BaseModel').default;
 const Resource = require('@joplin/lib/models/Resource.js');
@@ -90,6 +92,12 @@ export default function useMessageHandler(scrollWhenReady: any, setScrollWhenRea
 			}
 		} else if (msg.indexOf('#') === 0) {
 			// This is an internal anchor, which is handled by the WebView so skip this case
+		} else if (msg === 'contentScriptExecuteCommand') {
+			const commandName = arg0.name;
+			const commandArgs = arg0.args || [];
+			void CommandService.instance().execute(commandName, ...commandArgs);
+		} else if (msg === 'postMessageService.message') {
+			void PostMessageService.instance().postMessage(arg0);
 		} else {
 			bridge().showErrorMessageBox(_('Unsupported link or message: %s', msg));
 		}

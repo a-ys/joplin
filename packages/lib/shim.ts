@@ -165,6 +165,12 @@ const shim = {
 		throw new Error('Not implemented');
 	},
 
+	fetchText: async (url: string, options: any = null): Promise<string> => {
+		const r = await shim.fetch(url, options || {});
+		if (!r.ok) throw new Error(`Could not fetch ${url}`);
+		return r.text();
+	},
+
 	createResourceFromPath: async (_filePath: string, _defaultProps: any = null, _options: any = null): Promise<ResourceEntity> => {
 		throw new Error('Not implemented');
 	},
@@ -181,7 +187,7 @@ const shim = {
 		throw new Error('Not implemented');
 	},
 
-	uploadBlob: () => {
+	uploadBlob: (_url: string, _options: any) => {
 		throw new Error('Not implemented');
 	},
 
@@ -209,7 +215,7 @@ const shim = {
 		throw new Error('Not implemented');
 	},
 
-	fetchBlob: async function(_url: string, _options: any = null) {
+	fetchBlob: function(_url: string, _options: any = null): any {
 		throw new Error('Not implemented');
 	},
 
@@ -325,6 +331,16 @@ const shim = {
 	keytar: (): any => {
 		throw new Error('Not implemented');
 	},
+
+	// In general all imports should be static, but for cases where dynamic
+	// require is needed, we should use the shim so that the code can build in
+	// React Native. In React Native that code path will throw an error, but at
+	// least it will build.
+	// https://stackoverflow.com/questions/55581073
+	requireDynamic: (_path: string): any => {
+		throw new Error('Not implemented');
+	},
+
 };
 
 export default shim;
