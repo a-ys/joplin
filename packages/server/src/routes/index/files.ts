@@ -6,7 +6,7 @@ import { ErrorNotFound } from '../../utils/errors';
 import { File } from '../../db';
 import { createPaginationLinks, pageMaxSize, Pagination, PaginationOrder, PaginationOrderDir, requestPaginationOrder, validatePagination } from '../../models/utils/pagination';
 import { setQueryParameters } from '../../utils/urlUtils';
-import { baseUrl } from '../../config';
+import config from '../../config';
 import { formatDateTime } from '../../utils/time';
 import defaultView from '../../utils/defaultView';
 import { View } from '../../services/MustacheService';
@@ -40,7 +40,7 @@ router.get('files/:id', async (path: SubPath, ctx: AppContext) => {
 	const owner = ctx.owner;
 	const fileModel = ctx.models.file({ userId: owner.id });
 	const root = await fileModel.userRootFile();
-	const parentTemp: File = dirId ? await fileModel.entityFromItemId(dirId) : root;
+	const parentTemp: File = dirId ? await fileModel.pathToFile(dirId, { returnFullEntity: false }) : root;
 	const parent: File = await fileModel.load(parentTemp.id);
 	const paginatedFiles = await fileModel.childrens(parent.id, pagination);
 	const pageCount = Math.ceil((await fileModel.childrenCount(parent.id)) / pagination.limit);
@@ -51,7 +51,7 @@ router.get('files/:id', async (path: SubPath, ctx: AppContext) => {
 	async function fileToViewItem(file: File, fileFullPaths: Record<string, string>): Promise<any> {
 		const filePath = fileFullPaths[file.id];
 
-		let url = `${baseUrl()}/files/${filePath}`;
+		let url = `${config().baseUrl}/files/${filePath}`;
 		if (!file.is_directory) {
 			url += '/content';
 		} else {
@@ -88,7 +88,7 @@ router.get('files/:id', async (path: SubPath, ctx: AppContext) => {
 	const view: View = defaultView('files');
 	view.content.paginatedFiles = { ...paginatedFiles, items: files };
 	view.content.paginationLinks = paginationLinks;
-	view.content.postUrl = `${baseUrl()}/files`;
+	view.content.postUrl = `${config().baseUrl}/files`;
 	view.content.parentId = parent.id;
 	view.cssFiles = ['index/files'];
 	view.partials.push('pagination');
@@ -97,7 +97,7 @@ router.get('files/:id', async (path: SubPath, ctx: AppContext) => {
 
 router.get('files/:id/content', async (path: SubPath, ctx: AppContext) => {
 	const fileModel = ctx.models.file({ userId: ctx.owner.id });
-	let file: File = await fileModel.entityFromItemId(path.id);
+	let file: File = await fileModel.pathToFile(path.id, { returnFullEntity: false });
 	file = await fileModel.loadWithContent(file.id);
 	if (!file) throw new ErrorNotFound();
 	return respondWithFileContent(ctx.response, file);
@@ -113,7 +113,7 @@ router.post('files', async (_path: SubPath, ctx: AppContext) => {
 
 	if (fields.delete_all_button) {
 		const fileModel = ctx.models.file({ userId: ctx.owner.id });
-		const parent: File = await fileModel.entityFromItemId(parentId, { returnFullEntity: true });
+		const parent: File = await fileModel.pathToFile(parentId, { returnFullEntity: false });
 		await fileModel.deleteChildren(parent.id);
 	} else {
 		throw new Error('Invalid form button');

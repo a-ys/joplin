@@ -8,12 +8,12 @@ import { Disposable } from './types';
 /**
  * @ignore
  */
-const Note = require('../../../models/Note');
+import Note from '../../../models/Note';
 
 /**
  * @ignore
  */
-const Folder = require('../../../models/Folder');
+import Folder from '../../../models/Folder';
 
 enum ItemChangeEventType {
 	Create = 1,
@@ -76,11 +76,12 @@ export default class JoplinWorkspace {
 	}
 
 	/**
-	 * Called when the content of a note changes.
+	 * Called when the content of the current note changes.
 	 */
 	public async onNoteChange(handler: ItemChangeHandler): Promise<Disposable> {
 		const wrapperHandler = (event: any) => {
 			if (event.itemType !== ModelType.Note) return;
+			if (!this.store.getState().selectedNoteIds.includes(event.itemId)) return;
 
 			handler({
 				id: event.itemId,

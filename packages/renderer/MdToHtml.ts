@@ -3,6 +3,8 @@ import noteStyle from './noteStyle';
 import { fileExtension } from './pathUtils';
 import setupLinkify from './MdToHtml/setupLinkify';
 import validateLinks from './MdToHtml/validateLinks';
+import { ItemIdToUrlHandler } from './utils';
+import { RenderResult, RenderResultPluginAsset } from './MarkupToHtml';
 
 const MarkdownIt = require('markdown-it');
 const md5 = require('md5');
@@ -12,6 +14,7 @@ interface RendererRule {
 	assets?(theme: any): any;
 	plugin?: any;
 	assetPath?: string;
+	assetPathIsAbsolute?: boolean;
 }
 
 interface RendererRules {
@@ -114,18 +117,6 @@ interface PluginContext {
 	currentLinks: Link[];
 }
 
-interface RenderResultPluginAsset {
-	name: string;
-	path: string;
-	mime: string;
-}
-
-interface RenderResult {
-	html: string;
-	pluginAssets: RenderResultPluginAsset[];
-	cssStrings: string[];
-}
-
 export interface RuleOptions {
 	context: PluginContext;
 	theme: any;
@@ -157,6 +148,8 @@ export interface RuleOptions {
 	audioPlayerEnabled: boolean;
 	videoPlayerEnabled: boolean;
 	pdfViewerEnabled: boolean;
+
+	itemIdToUrl?: ItemIdToUrlHandler;
 }
 
 export default class MdToHtml {
@@ -239,6 +232,7 @@ export default class MdToHtml {
 		this.extraRendererRules_[id] = {
 			...module,
 			assetPath,
+			assetPathIsAbsolute: true,
 		};
 	}
 
@@ -290,6 +284,7 @@ export default class MdToHtml {
 					files.push(Object.assign({}, asset, {
 						name: name,
 						path: assetPath,
+						pathIsAbsolute: !!rule && !!rule.assetPathIsAbsolute,
 						mime: mime,
 					}));
 				}

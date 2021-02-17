@@ -42,7 +42,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 
 		this.sidebar_selectionChange = this.sidebar_selectionChange.bind(this);
 		this.checkSyncConfig_ = this.checkSyncConfig_.bind(this);
-		this.checkNextcloudAppButton_click = this.checkNextcloudAppButton_click.bind(this);
+		// this.checkNextcloudAppButton_click = this.checkNextcloudAppButton_click.bind(this);
 		this.showLogButton_click = this.showLogButton_click.bind(this);
 		this.nextcloudAppHelpLink_click = this.nextcloudAppHelpLink_click.bind(this);
 		this.onCancelClick = this.onCancelClick.bind(this);
@@ -57,10 +57,10 @@ class ConfigScreenComponent extends React.Component<any, any> {
 		await shared.checkSyncConfig(this, this.state.settings);
 	}
 
-	async checkNextcloudAppButton_click() {
-		this.setState({ showNextcloudAppLog: true });
-		await shared.checkNextcloudApp(this, this.state.settings);
-	}
+	// async checkNextcloudAppButton_click() {
+	// 	this.setState({ showNextcloudAppLog: true });
+	// 	await shared.checkNextcloudApp(this, this.state.settings);
+	// }
 
 	showLogButton_click() {
 		this.setState({ showNextcloudAppLog: true });
@@ -148,6 +148,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 
 		const createSettingComponents = (advanced: boolean) => {
 			const output = [];
+
 			for (let i = 0; i < section.metadatas.length; i++) {
 				const md = section.metadatas[i];
 				if (!!md.advanced !== advanced) continue;
@@ -160,8 +161,8 @@ class ConfigScreenComponent extends React.Component<any, any> {
 		const settingComps = createSettingComponents(false);
 		const advancedSettingComps = createSettingComponents(true);
 
-		const sectionWidths: Record<string, number> = {
-			plugins: 900,
+		const sectionWidths: Record<string, any> = {
+			plugins: '100%',
 		};
 
 		const sectionStyle: any = {
@@ -202,48 +203,48 @@ class ConfigScreenComponent extends React.Component<any, any> {
 				);
 			}
 
-			if (syncTargetMd.name === 'nextcloud') {
-				const syncTarget = settings['sync.5.syncTargets'][settings['sync.5.path']];
+			// if (syncTargetMd.name === 'nextcloud') {
+			// 	const syncTarget = settings['sync.5.syncTargets'][settings['sync.5.path']];
 
-				let status = _('Unknown');
-				let errorMessage = null;
+			// 	let status = _('Unknown');
+			// 	let errorMessage = null;
 
-				if (this.state.checkNextcloudAppResult === 'checking') {
-					status = _('Checking...');
-				} else if (syncTarget) {
-					if (syncTarget.uuid) status = _('OK');
-					if (syncTarget.error) {
-						status = _('Error');
-						errorMessage = syncTarget.error;
-					}
-				}
+			// 	if (this.state.checkNextcloudAppResult === 'checking') {
+			// 		status = _('Checking...');
+			// 	} else if (syncTarget) {
+			// 		if (syncTarget.uuid) status = _('OK');
+			// 		if (syncTarget.error) {
+			// 			status = _('Error');
+			// 			errorMessage = syncTarget.error;
+			// 		}
+			// 	}
 
-				const statusComp = !errorMessage || this.state.checkNextcloudAppResult === 'checking' || !this.state.showNextcloudAppLog ? null : (
-					<div style={statusStyle}>
-						<p style={theme.textStyle}>{_('The Joplin Nextcloud App is either not installed or misconfigured. Please see the full error message below:')}</p>
-						<pre>{errorMessage}</pre>
-					</div>
-				);
+			// 	const statusComp = !errorMessage || this.state.checkNextcloudAppResult === 'checking' || !this.state.showNextcloudAppLog ? null : (
+			// 		<div style={statusStyle}>
+			// 			<p style={theme.textStyle}>{_('The Joplin Nextcloud App is either not installed or misconfigured. Please see the full error message below:')}</p>
+			// 			<pre>{errorMessage}</pre>
+			// 		</div>
+			// 	);
 
-				const showLogButton = !errorMessage || this.state.showNextcloudAppLog ? null : (
-					<a style={theme.urlStyle} href="#" onClick={this.showLogButton_click}>[{_('Show Log')}]</a>
-				);
+			// 	const showLogButton = !errorMessage || this.state.showNextcloudAppLog ? null : (
+			// 		<a style={theme.urlStyle} href="#" onClick={this.showLogButton_click}>[{_('Show Log')}]</a>
+			// 	);
 
-				const appStatusStyle = Object.assign({}, theme.textStyle, { fontWeight: 'bold' });
+			// 	const appStatusStyle = Object.assign({}, theme.textStyle, { fontWeight: 'bold' });
 
-				settingComps.push(
-					<div key="nextcloud_app_check" style={this.rowStyle_}>
-						<span style={theme.textStyle}>Beta: {_('Joplin Nextcloud App status:')} </span><span style={appStatusStyle}>{status}</span>
-						&nbsp;&nbsp;
-						{showLogButton}
-						&nbsp;&nbsp;
-						<Button level={ButtonLevel.Secondary} style={{ display: 'inline-block' }} title={_('Check Status')} disabled={this.state.checkNextcloudAppResult === 'checking'} onClick={this.checkNextcloudAppButton_click}/>
-						&nbsp;&nbsp;
-						<a style={theme.urlStyle} href="#" onClick={this.nextcloudAppHelpLink_click}>[{_('Help')}]</a>
-						{statusComp}
-					</div>
-				);
-			}
+			// 	settingComps.push(
+			// 		<div key="nextcloud_app_check" style={this.rowStyle_}>
+			// 			<span style={theme.textStyle}>Beta: {_('Joplin Nextcloud App status:')} </span><span style={appStatusStyle}>{status}</span>
+			// 			&nbsp;&nbsp;
+			// 			{showLogButton}
+			// 			&nbsp;&nbsp;
+			// 			<Button level={ButtonLevel.Secondary} style={{ display: 'inline-block' }} title={_('Check Status')} disabled={this.state.checkNextcloudAppResult === 'checking'} onClick={this.checkNextcloudAppButton_click}/>
+			// 			&nbsp;&nbsp;
+			// 			<a style={theme.urlStyle} href="#" onClick={this.nextcloudAppHelpLink_click}>[{_('Help')}]</a>
+			// 			{statusComp}
+			// 		</div>
+			// 	);
+			// }
 		}
 
 		let advancedSettingsButton = null;
@@ -305,7 +306,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 		);
 	}
 
-	private renderHeader(themeId: number, label: string) {
+	private renderHeader(themeId: number, label: string, style: any = null) {
 		const theme = themeStyle(themeId);
 
 		const labelStyle = Object.assign({}, theme.textStyle, {
@@ -314,6 +315,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 			fontSize: theme.fontSize * 1.25,
 			fontWeight: 500,
 			marginBottom: theme.mainPadding,
+			...style,
 		});
 
 		return (
@@ -457,7 +459,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 			// There's probably a better way to do this but can't figure it out.
 
 			return (
-				<div key={key + value.toString()} style={rowStyle}>
+				<div key={key + (`${value}`).toString()} style={rowStyle}>
 					<div style={{ ...controlStyle, backgroundColor: 'transparent', display: 'flex', alignItems: 'center' }}>
 						<input
 							id={`setting_checkbox_${key}`}
@@ -535,7 +537,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 						<div style={{ display: 'flex' }}>
 							<div style={{ flex: 1 }}>
 								<div style={{ ...rowStyle, marginBottom: 5 }}>
-									<div style={subLabel}>Path:</div>
+									<div style={subLabel}>{_('Path:')}</div>
 									<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: inputStyle.marginBottom }}>
 										<input
 											type={inputType}
@@ -554,7 +556,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 									</div>
 								</div>
 								<div style={{ ...rowStyle, marginBottom: 5 }}>
-									<div style={subLabel}>Arguments:</div>
+									<div style={subLabel}>{_('Arguments:')}</div>
 									<input
 										type={inputType}
 										style={inputStyle}
@@ -564,7 +566,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 										value={cmd[1]}
 										spellCheck={false}
 									/>
-									<div style={{ width: inputStyle.width }}>
+									<div style={{ width: inputStyle.width, minWidth: inputStyle.minWidth }}>
 										{descriptionComp}
 									</div>
 								</div>
@@ -593,7 +595,7 @@ class ConfigScreenComponent extends React.Component<any, any> {
 							}}
 							spellCheck={false}
 						/>
-						<div style={{ width: inputStyle.width }}>
+						<div style={{ width: inputStyle.width, minWidth: inputStyle.minWidth }}>
 							{descriptionComp}
 						</div>
 					</div>
@@ -727,14 +729,17 @@ class ConfigScreenComponent extends React.Component<any, any> {
 			</div>
 		) : null;
 
+		const rightStyle = { ...style, flex: 1 };
+		delete style.width;
+
 		return (
-			<div style={{ display: 'flex', flexDirection: 'row' }}>
+			<div style={{ display: 'flex', flexDirection: 'row', height: this.props.style.height }}>
 				<Sidebar
 					selection={this.state.selectedSectionName}
 					onSelectionChange={this.sidebar_selectionChange}
 					sections={sections}
 				/>
-				<div style={style}>
+				<div style={rightStyle}>
 					{screenComp}
 					{needRestartComp}
 					<div style={containerStyle}>{settingComps}</div>

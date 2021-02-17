@@ -1,9 +1,8 @@
-import { User, Session, DbConnection, connectDb, disconnectDb, File, truncateTables } from '../../db';
+import { User, Session, DbConnection, connectDb, disconnectDb, File, truncateTables, sqliteFilePath } from '../../db';
 import { createDb } from '../../tools/dbTools';
 import modelFactory from '../../models/factory';
-import baseConfig from '../../config-tests';
-import { AppContext, Config, Env } from '../types';
-import { initConfig } from '../../config';
+import { AppContext, Env } from '../types';
+import config, { initConfig } from '../../config';
 import FileModel from '../../models/FileModel';
 import Logger from '@joplin/lib/Logger';
 import FakeCookies from './koa/FakeCookies';
@@ -13,6 +12,7 @@ import * as httpMocks from 'node-mocks-http';
 import * as crypto from 'crypto';
 import * as fs from 'fs-extra';
 import * as jsdom from 'jsdom';
+import setupAppContext from '../setupAppContext';
 
 // Takes into account the fact that this file will be inside the /dist directory
 // when it runs.
@@ -34,18 +34,16 @@ export async function tempDir(): Promise<string> {
 	return tempDir_;
 }
 
+let createdDbName_: string = null;
 export async function beforeAllDb(unitName: string) {
-	const config: Config = {
-		...baseConfig,
-		database: {
-			...baseConfig.database,
-			name: unitName,
-		},
-	};
+	createdDbName_ = unitName;
 
-	initConfig(config);
-	await createDb(config.database, { dropIfExists: true });
-	db_ = await connectDb(config.database);
+	initConfig({
+		SQLITE_DATABASE: createdDbName_,
+	});
+
+	await createDb(config().database, { dropIfExists: true });
+	db_ = await connectDb(config().database);
 }
 
 export async function afterAllTests() {
@@ -57,6 +55,12 @@ export async function afterAllTests() {
 	if (tempDir_) {
 		await fs.remove(tempDir_);
 		tempDir_ = null;
+	}
+
+	if (createdDbName_) {
+		const filePath = sqliteFilePath(createdDbName_);
+		await fs.remove(filePath);
+		createdDbName_ = null;
 	}
 }
 
@@ -107,6 +111,8 @@ export async function koaAppContext(options: AppContextTestOptions = null): Prom
 	// Set type to "any" because the Koa context has many properties and we
 	// don't need to mock all of them.
 	const appContext: any = {};
+
+	await setupAppContext(appContext, Env.Dev, db_, () => appLogger);
 
 	appContext.env = Env.Dev;
 	appContext.db = db_;
@@ -193,6 +199,21 @@ export async function createFileTree(fileModel: FileModel, parentId: string, tre
 		});
 
 		if (isDir && Object.keys(children).length) await createFileTree(fileModel, newFile.id, children);
+	}
+}
+
+export async function createFile(userId: string, path: string, content: string): Promise<File> {
+	const fileModel = models().file({ userId });
+	const file: File = await fileModel.pathToFile(path, { mustExist: false, returnFullEntity: false });
+	file.content = Buffer.from(content);
+	const savedFile = await fileModel.save(file);
+	return fileModel.load(savedFile.id);
+}
+
+export function checkContextError(context: AppContext) {
+	if (context.response.status >= 400) {
+		// console.info(context.response.body);
+		throw new Error(`${context.method} ${context.path} ${JSON.stringify(context.response)}`);
 	}
 }
 

@@ -3,7 +3,7 @@ import CommandService from '@joplin/lib/services/CommandService';
 import KeymapService, { KeymapItem } from '@joplin/lib/services/KeymapService';
 import { EditorCommand } from '../../../utils/types';
 import shim from '@joplin/lib/shim';
-const { reg } = require('@joplin/lib/registry.js');
+import { reg } from '@joplin/lib/registry';
 
 export default function useKeymap(CodeMirror: any) {
 
@@ -19,11 +19,14 @@ export default function useKeymap(CodeMirror: any) {
 
 	function setupVim() {
 		CodeMirror.Vim.defineAction('swapLineDown', CodeMirror.commands.swapLineDown);
-		CodeMirror.Vim.mapCommand('<A-j>', 'action', 'swapLineDown', {},  { context: 'normal', isEdit: true });
+		CodeMirror.Vim.mapCommand('<A-j>', 'action', 'swapLineDown', {}, { context: 'normal', isEdit: true });
 		CodeMirror.Vim.defineAction('swapLineUp', CodeMirror.commands.swapLineUp);
-		CodeMirror.Vim.mapCommand('<A-k>', 'action', 'swapLineUp', {},  { context: 'normal', isEdit: true });
+		CodeMirror.Vim.mapCommand('<A-k>', 'action', 'swapLineUp', {}, { context: 'normal', isEdit: true });
 		CodeMirror.Vim.defineAction('insertListElement', CodeMirror.commands.vimInsertListElement);
 		CodeMirror.Vim.mapCommand('o', 'action', 'insertListElement', { after: true }, { context: 'normal', isEdit: true, interlaceInsertRepeat: true });
+	}
+	function isEditorCommand(command: string) {
+		return command.startsWith('editor.');
 	}
 
 	// Converts a command of the form editor.command to just command
@@ -91,7 +94,7 @@ export default function useKeymap(CodeMirror: any) {
 
 
 	CodeMirror.defineExtension('supportsCommand', function(cmd: EditorCommand) {
-		return CommandService.isEditorCommand(cmd.name) && editorCommandToCodeMirror(cmd.name) in CodeMirror.commands;
+		return isEditorCommand(cmd.name) && editorCommandToCodeMirror(cmd.name) in CodeMirror.commands;
 	});
 
 	// Used when an editor command is executed using the CommandService.instance().execute

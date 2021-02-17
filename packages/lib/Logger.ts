@@ -1,7 +1,10 @@
 const moment = require('moment');
-const time = require('./time').default;
+import time from './time';
 const { FsDriverDummy } = require('./fs-driver-dummy.js');
 const { sprintf } = require('sprintf-js');
+const Mutex = require('async-mutex').Mutex;
+
+const writeToFileMutex_ = new Mutex();
 
 export enum TargetType {
 	Database = 'database',
@@ -55,17 +58,26 @@ class Logger {
 	private targets_: Target[] = [];
 	private level_: LogLevel = LogLevel.Info;
 	private lastDbCleanup_: number = time.unixMs();
+	private enabled_: boolean = true;
 
 	static fsDriver() {
 		if (!Logger.fsDriver_) Logger.fsDriver_ = new FsDriverDummy();
 		return Logger.fsDriver_;
 	}
 
+	public get enabled(): boolean {
+		return this.enabled_;
+	}
+
+	public set enabled(v: boolean) {
+		this.enabled_ = v;
+	}
+
 	public static initializeGlobalLogger(logger: Logger) {
 		this.globalLogger_ = logger;
 	}
 
-	private static get globalLogger(): Logger {
+	public static get globalLogger(): Logger {
 		if (!this.globalLogger_) throw new Error('Global logger has not been initialized!!');
 		return this.globalLogger_;
 	}
@@ -166,7 +178,7 @@ class Logger {
 	}
 
 	public log(level: LogLevel, prefix: string, ...object: any[]) {
-		if (!this.targets_.length) return;
+		if (!this.targets_.length || !this.enabled) return;
 
 		for (let i = 0; i < this.targets_.length; i++) {
 			const target = this.targets_[i];
@@ -205,12 +217,23 @@ class Logger {
 				const line = [timestamp];
 				if (targetPrefix) line.push(targetPrefix);
 				line.push(this.objectsToString(...object));
-				try {
-					// TODO: Should log async
-					Logger.fsDriver().appendFileSync(target.path, `${line.join(': ')}\n`);
-				} catch (error) {
+
+				// Write to file using a mutex so that log entries appear in the
+				// correct order (otherwise, since the async call is not awaited
+				// by caller, multiple log call in a row are not guaranteed to
+				// appear in the right order). We also can't use a sync call
+				// because that would slow down the main process, especially
+				// when many log operations are being done (eg. during sync in
+				// dev mode).
+				let release: Function = null;
+				writeToFileMutex_.acquire().then((r: Function) => {
+					release = r;
+					return Logger.fsDriver().appendFile(target.path, `${line.join(': ')}\n`, 'utf8');
+				}).catch((error: any) => {
 					console.error('Cannot write to log file:', error);
-				}
+				}).finally(() => {
+					if (release) release();
+				});
 			} else if (target.type == 'database') {
 				const msg = [];
 				if (targetPrefix) msg.push(targetPrefix);

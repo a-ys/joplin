@@ -34,7 +34,7 @@ const { connect } = require('react-redux');
 const { PromptDialog } = require('../PromptDialog.min.js');
 const NotePropertiesDialog = require('../NotePropertiesDialog.min.js');
 const PluginManager = require('@joplin/lib/services/PluginManager');
-const EncryptionService = require('@joplin/lib/services/EncryptionService');
+import EncryptionService from '@joplin/lib/services/EncryptionService';
 const ipcRenderer = require('electron').ipcRenderer;
 
 interface LayerModalState {
@@ -62,6 +62,7 @@ interface Props {
 	themeId: number;
 	settingEditorCodeView: boolean;
 	pluginsLegacy: any;
+	startupPluginsLoaded: boolean;
 }
 
 interface State {
@@ -323,6 +324,13 @@ class MainScreenComponent extends React.Component<Props, State> {
 			const toSave = saveLayout(this.props.mainLayout);
 			Setting.setValue('ui.layout', toSave);
 		}
+
+		if (prevState.promptOptions !== this.state.promptOptions) {
+			this.props.dispatch({
+				type: !prevState.promptOptions ? 'VISIBLE_DIALOGS_ADD' : 'VISIBLE_DIALOGS_REMOVE',
+				name: 'promptDialog',
+			});
+		}
 	}
 
 	layoutModeListenerKeyDown(event: any) {
@@ -572,6 +580,15 @@ class MainScreenComponent extends React.Component<Props, State> {
 	}
 
 	resizableLayout_renderItem(key: string, event: any) {
+		// Key should never be undefined but somehow it can happen, also not
+		// clear how. For now in this case render nothing so that the app
+		// doesn't crash.
+		// https://discourse.joplinapp.org/t/rearranging-the-pannels-crushed-the-app-and-generated-fatal-error/14373?u=laurent
+		if (!key) {
+			console.error('resizableLayout_renderItem: Trying to render an item using an empty key. Full layout is:', this.props.mainLayout);
+			return null;
+		}
+
 		const eventEmitter = event.eventEmitter;
 
 		// const viewsToRemove:string[] = [];
@@ -600,19 +617,21 @@ class MainScreenComponent extends React.Component<Props, State> {
 
 		if (components[key]) return components[key]();
 
+		const viewsToRemove: string[] = [];
+
 		if (key.indexOf('plugin-view') === 0) {
 			const viewInfo = pluginUtils.viewInfoByViewId(this.props.plugins, event.item.key);
 
 			if (!viewInfo) {
-				// Note that it will happen when the component is rendered
-				// before the plugins have loaded their views, so because of
-				// this we need to keep the view in the layout.
+				// Once all startup plugins have loaded, we know that all the
+				// views are ready so we can remove the orphans ones.
 				//
-				// But it can also be a problem if the view really is invalid
-				// due to a faulty plugin as currently there would be no way to
-				// remove it.
-				console.warn(`Could not find plugin associated with view: ${event.item.key}`);
-				return null;
+				// Before they are loaded, there might be views that don't match
+				// any plugins, but that's only because it hasn't loaded yet.
+				if (this.props.startupPluginsLoaded) {
+					console.warn(`Could not find plugin associated with view: ${event.item.key}`);
+					viewsToRemove.push(event.item.key);
+				}
 			} else {
 				const { view, plugin } = viewInfo;
 
@@ -631,19 +650,19 @@ class MainScreenComponent extends React.Component<Props, State> {
 			throw new Error(`Invalid layout component: ${key}`);
 		}
 
-		// if (viewsToRemove.length) {
-		// 	window.requestAnimationFrame(() => {
-		// 		let newLayout = this.props.mainLayout;
-		// 		for (const itemKey of viewsToRemove) {
-		// 			newLayout = removeItem(newLayout, itemKey);
-		// 		}
+		if (viewsToRemove.length) {
+			window.requestAnimationFrame(() => {
+				let newLayout = this.props.mainLayout;
+				for (const itemKey of viewsToRemove) {
+					newLayout = removeItem(newLayout, itemKey);
+				}
 
-		// 		if (newLayout !== this.props.mainLayout) {
-		// 			console.warn('Removed invalid views:', viewsToRemove);
-		// 			this.updateMainLayout(newLayout);
-		// 		}
-		// 	});
-		// }
+				if (newLayout !== this.props.mainLayout) {
+					console.warn('Removed invalid views:', viewsToRemove);
+					this.updateMainLayout(newLayout);
+				}
+			});
+		}
 	}
 
 	renderPluginDialogs() {
@@ -757,6 +776,7 @@ const mapStateToProps = (state: AppState) => {
 		focusedField: state.focusedField,
 		layoutMoveMode: state.layoutMoveMode,
 		mainLayout: state.mainLayout,
+		startupPluginsLoaded: state.startupPluginsLoaded,
 	};
 };
 
